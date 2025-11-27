@@ -43,66 +43,35 @@ const PLATFORM_PALETTE: Record<string, number> = {
   G: 0x0d8c5d,
 };
 
-const GIFT_SMALL_MATRIX: PixelMatrix = [
-  '.BBBBBBBBBB.',
-  'BBBBBBBBBBBB',
-  'BBBBBBBBBBBB',
-  'BBYYBBYYBBBB',
-  'BBBBBBBBBBBB',
-  'BBBBBBBBBBBB',
-  'BBYYBBYYBBBB',
-  'BBBBBBBBBBBB',
-  'BBBBBBBBBBBB',
-  '.BBBBBBBBBB.',
+// Use a single uniform gift size for clean stacking
+const GIFT_MATRIX: PixelMatrix = [
+  '..BBBBBBBBBB..',
+  '.BBBBBBBBBBBB.',
+  'BBBBBBBBBBBBBB',
+  'BBBBRRRRBBBBBB',
+  'BBBBRRRRBBBBBB',
+  'BBRRRRRRRRRRRB',
+  'BBRRRRRRRRRRRB',
+  'BBBBRRRRBBBBBB',
+  'BBBBRRRRBBBBBB',
+  'BBBBBBBBBBBBBB',
+  '.BBBBBBBBBBBB.',
+  '..BBBBBBBBBB..',
 ];
 
-const GIFT_MEDIUM_MATRIX: PixelMatrix = [
-  '.BBBBBBBBBBBBBB.',
-  'BBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBB',
-  'BBYYBBYYBBYYBBBB',
-  'BBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBB',
-  'BBYYBBYYBBYYBBBB',
-  'BBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBB',
-  '.BBBBBBBBBBBBBB.',
-];
-
-const GIFT_LARGE_MATRIX: PixelMatrix = [
-  '.BBBBBBBBBBBBBBBBBB.',
-  'BBBBBBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBBBBBB',
-  'BBYYBBYYBBYYBBYYBBBB',
-  'BBBBBBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBBBBBB',
-  'BBYYBBYYBBYYBBYYBBBB',
-  'BBBBBBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBBBBBB',
-  'BBBBBBBBBBBBBBBBBBBB',
-  '.BBBBBBBBBBBBBBBBBB.',
-];
-
-const GIFT_PALETTE: Record<string, number> = {
+const GIFT_BLUE_PALETTE: Record<string, number> = {
   B: 0x3b6cfb,
-  Y: 0xffd166,
+  R: 0xffd166, // ribbon
 };
 
 const GIFT_RED_PALETTE: Record<string, number> = {
   B: 0xd7263d,
-  Y: 0xffd166,
+  R: 0xffd166,
 };
 
 const GIFT_GREEN_PALETTE: Record<string, number> = {
   B: 0x0d8c5d,
-  Y: 0xffd166,
+  R: 0xffd166,
 };
 
 const SPARKLE_MATRIX: PixelMatrix = [
@@ -119,21 +88,28 @@ const SPARKLE_PALETTE: Record<string, number> = {
 
 const SPARKLE_KEY = 'stack-sparkle';
 
-interface StackedGift {
-  sprite: Phaser.Physics.Arcade.Sprite;
-  size: 'small' | 'medium' | 'large';
-  stacked: boolean;
+// Grid configuration
+const GIFT_SIZE = 50; // Uniform gift size
+const GRID_COLS = 3; // 3 columns for stacking
+const GRID_ROWS = 6; // Maximum 6 rows high
+
+interface GridCell {
+  col: number;
+  row: number;
+  sprite: Phaser.GameObjects.Image | null;
 }
 
 export class GiftStackingGame extends Phaser.Scene {
-  private platform!: Phaser.Physics.Arcade.Sprite;
+  private stackContainer!: Phaser.GameObjects.Container;
+  private platform!: Phaser.GameObjects.Image;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasdKeys!: {
     A: Phaser.Input.Keyboard.Key;
     D: Phaser.Input.Keyboard.Key;
   };
-  private gifts!: Phaser.Physics.Arcade.Group;
-  private stackedGifts: StackedGift[] = [];
+  private fallingGifts!: Phaser.Physics.Arcade.Group;
+  private catchZone!: Phaser.Physics.Arcade.Sprite;
+  private grid: GridCell[][] = [];
   private timerText!: Phaser.GameObjects.Text;
   private stackText!: Phaser.GameObjects.Text;
   private hintText!: Phaser.GameObjects.Text;
@@ -148,6 +124,8 @@ export class GiftStackingGame extends Phaser.Scene {
   private spawnTimer!: Phaser.Time.TimerEvent;
   private gameConfigData!: GameConfig;
   private pointerX: number | null = null;
+  private containerX = 0;
+  private platformWidth = 160;
 
   constructor() {
     super({ key: 'GiftStackingGame' });
@@ -164,17 +142,18 @@ export class GiftStackingGame extends Phaser.Scene {
     this.letterHints = [];
     this.availableLetters = this.getUniqueLetters();
     this.timeRemaining = 60;
-    this.stackedGifts = [];
     this.pointerX = null;
+    this.containerX = this.scale.width / 2;
 
     this.cameras.main.setBackgroundColor('#041830');
-    this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height);
 
     this.buildTextures();
     this.createBackground();
     this.createSnow();
-    this.createPlatform();
-    this.createGroups();
+    this.initGrid();
+    this.createStackContainer();
+    this.createCatchZone();
+    this.createFallingGroup();
     this.createUI();
     this.startSpawning();
 
@@ -204,69 +183,9 @@ export class GiftStackingGame extends Phaser.Scene {
 
   private buildTextures() {
     drawPixelTexture(this, 'stack-platform', PLATFORM_MATRIX, PLATFORM_PALETTE);
-    drawPixelTexture(
-      this,
-      'stack-gift-small',
-      GIFT_SMALL_MATRIX,
-      GIFT_PALETTE,
-      3
-    );
-    drawPixelTexture(
-      this,
-      'stack-gift-medium',
-      GIFT_MEDIUM_MATRIX,
-      GIFT_PALETTE,
-      3
-    );
-    drawPixelTexture(
-      this,
-      'stack-gift-large',
-      GIFT_LARGE_MATRIX,
-      GIFT_PALETTE,
-      3
-    );
-    drawPixelTexture(
-      this,
-      'stack-gift-small-red',
-      GIFT_SMALL_MATRIX,
-      GIFT_RED_PALETTE,
-      3
-    );
-    drawPixelTexture(
-      this,
-      'stack-gift-medium-red',
-      GIFT_MEDIUM_MATRIX,
-      GIFT_RED_PALETTE,
-      3
-    );
-    drawPixelTexture(
-      this,
-      'stack-gift-large-red',
-      GIFT_LARGE_MATRIX,
-      GIFT_RED_PALETTE,
-      3
-    );
-    drawPixelTexture(
-      this,
-      'stack-gift-small-green',
-      GIFT_SMALL_MATRIX,
-      GIFT_GREEN_PALETTE,
-      3
-    );
-    drawPixelTexture(
-      this,
-      'stack-gift-medium-green',
-      GIFT_MEDIUM_MATRIX,
-      GIFT_GREEN_PALETTE,
-      3
-    );
-    drawPixelTexture(
-      this,
-      'stack-gift-large-green',
-      GIFT_LARGE_MATRIX,
-      GIFT_GREEN_PALETTE,
-      3
-    );
+    drawPixelTexture(this, 'stack-gift-blue', GIFT_MATRIX, GIFT_BLUE_PALETTE, 3);
+    drawPixelTexture(this, 'stack-gift-red', GIFT_MATRIX, GIFT_RED_PALETTE, 3);
+    drawPixelTexture(this, 'stack-gift-green', GIFT_MATRIX, GIFT_GREEN_PALETTE, 3);
     drawPixelTexture(this, SPARKLE_KEY, SPARKLE_MATRIX, SPARKLE_PALETTE, 2);
   }
 
@@ -320,36 +239,50 @@ export class GiftStackingGame extends Phaser.Scene {
     particles.setDepth(-3);
   }
 
-  private createPlatform() {
-    const platformWidth = 200;
-    const platformHeight = 24;
-    this.platform = this.physics.add
-      .sprite(this.scale.width / 2, this.scale.height - 40, 'stack-platform')
-      .setDepth(2);
-    this.platform.setDisplaySize(platformWidth, platformHeight);
-    this.platform.setImmovable(true);
-    this.platform.setCollideWorldBounds(true);
-    const body = this.platform.body as Phaser.Physics.Arcade.Body;
-    body.setAllowGravity(false);
-    body.setSize(platformWidth, platformHeight);
+  private initGrid() {
+    this.grid = [];
+    for (let col = 0; col < GRID_COLS; col++) {
+      this.grid[col] = [];
+      for (let row = 0; row < GRID_ROWS; row++) {
+        this.grid[col][row] = { col, row, sprite: null };
+      }
+    }
   }
 
-  private createGroups() {
-    this.gifts = this.physics.add.group();
+  private createStackContainer() {
+    // Container holds platform + all stacked gifts and moves as one unit
+    this.stackContainer = this.add.container(this.containerX, this.scale.height - 40);
+    this.stackContainer.setDepth(2);
 
-    // Collision between gifts
-    this.physics.add.collider(
-      this.gifts,
-      this.gifts,
-      this.dampenGiftCollision,
-      undefined,
-      this
+    // Platform is centered in the container (at local 0,0)
+    this.platform = this.add.image(0, 0, 'stack-platform');
+    this.platform.setDisplaySize(this.platformWidth, 24);
+    this.stackContainer.add(this.platform);
+  }
+
+  private createCatchZone() {
+    // Invisible physics body that moves with the container for catching gifts
+    // Thin zone at top of platform - gifts must actually touch to be caught
+    this.catchZone = this.physics.add.sprite(
+      this.containerX,
+      this.scale.height - 52, // Top edge of platform
+      'stack-platform'
     );
-    // Collision between gifts and platform
-    this.physics.add.collider(
-      this.gifts,
-      this.platform,
-      this.handleLandingCollision,
+    this.catchZone.setVisible(false);
+    this.catchZone.setImmovable(true);
+    const body = this.catchZone.body as Phaser.Physics.Arcade.Body;
+    body.setAllowGravity(false);
+    body.setSize(this.platformWidth, 6); // Very thin - must be close to catch
+  }
+
+  private createFallingGroup() {
+    this.fallingGifts = this.physics.add.group();
+
+    // When a falling gift hits the catch zone, snap it to the grid
+    this.physics.add.overlap(
+      this.fallingGifts,
+      this.catchZone,
+      this.catchGift,
       undefined,
       this
     );
@@ -357,7 +290,7 @@ export class GiftStackingGame extends Phaser.Scene {
 
   private startSpawning() {
     this.spawnTimer = this.time.addEvent({
-      delay: 2500,
+      delay: 1800,
       callback: this.spawnGift,
       callbackScope: this,
       loop: true,
@@ -369,121 +302,115 @@ export class GiftStackingGame extends Phaser.Scene {
   private spawnGift() {
     if (this.gameOver) return;
 
-    const sizes: Array<'small' | 'medium' | 'large'> = [
-      'small',
-      'medium',
-      'large',
-    ];
-    const size = sizes[Phaser.Math.Between(0, 2)];
-    const colors = ['', '-red', '-green'];
+    const colors = ['blue', 'red', 'green'];
     const color = colors[Phaser.Math.Between(0, 2)];
-    const textureKey = `stack-gift-${size}${color}`;
+    const textureKey = `stack-gift-${color}`;
 
-    const x = Phaser.Math.Between(50, this.scale.width - 50);
-    const gift = this.gifts.create(
-      x,
-      -30,
-      textureKey
-    ) as Phaser.Physics.Arcade.Sprite;
+    const x = Phaser.Math.Between(60, this.scale.width - 60);
+    const gift = this.fallingGifts.create(x, -30, textureKey) as Phaser.Physics.Arcade.Sprite;
 
-    // Set size-based properties
-    let width = 0;
-    let height = 0;
-    let mass = 1;
-    if (size === 'small') {
-      width = 60;
-      height = 60;
-      mass = 0.8;
-    } else if (size === 'medium') {
-      width = 80;
-      height = 80;
-      mass = 1.2;
-    } else {
-      width = 100;
-      height = 100;
-      mass = 1.5;
-    }
-
-    gift.setDisplaySize(width, height);
+    gift.setDisplaySize(GIFT_SIZE, GIFT_SIZE);
     gift.setDepth(1);
-    gift.setData('size', size);
+    gift.setData('color', color);
 
     const body = gift.body as Phaser.Physics.Arcade.Body;
     body.setAllowGravity(true);
-    body.setGravityY(400);
-    body.setSize(width * 0.85, height * 0.85);
-    body.setMass(mass);
-    body.setBounce(0.1, 0.1);
-    body.setDrag(50, 0);
-    body.setFriction(1, 0);
-    body.setMaxVelocity(300, 500);
-    body.setCollideWorldBounds(true);
-
-    // No rotation - keep gifts upright for easier stacking
-    gift.setRotation(0);
+    body.setGravityY(300);
+    body.setSize(GIFT_SIZE, GIFT_SIZE);
+    body.setVelocityY(100);
   }
 
-  private checkGiftStacked(
-    gift: Phaser.Physics.Arcade.Sprite,
-    size: 'small' | 'medium' | 'large'
-  ) {
-    if (!gift || !gift.active || this.gameOver) return;
+  private catchGift: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
+    _zone,
+    giftObj
+  ) => {
+    const gift = giftObj as Phaser.Physics.Arcade.Sprite;
+    if (!gift.active) return;
 
-    // Skip if already stacked
-    const existing = this.stackedGifts.find(sg => sg.sprite === gift);
-    if (existing && existing.stacked) return;
+    // Find the best column to place this gift (closest to where it landed)
+    const giftLocalX = gift.x - this.containerX;
+    const colWidth = this.platformWidth / GRID_COLS;
+    let bestCol = Math.floor((giftLocalX + this.platformWidth / 2) / colWidth);
+    bestCol = Phaser.Math.Clamp(bestCol, 0, GRID_COLS - 1);
 
-    const body = gift.body as Phaser.Physics.Arcade.Body;
-
-    // Check if gift is near/on the platform level (y position check)
-    const platformTop = this.platform.y - this.platform.displayHeight / 2;
-    const giftBottom = gift.y + gift.displayHeight / 2;
-    const isNearPlatformLevel = giftBottom >= platformTop - 10;
-
-    // Check if gift is touching something below it OR has very low vertical velocity
-    const isTouchingDown = body.touching.down || body.blocked.down;
-    const hasSettled = Math.abs(body.velocity.y) < 50;
-
-    // Check if gift is above the platform horizontally
-    const platformLeft = this.platform.x - this.platform.displayWidth / 2;
-    const platformRight = this.platform.x + this.platform.displayWidth / 2;
-    const isAbovePlatform = gift.x >= platformLeft - 50 && gift.x <= platformRight + 50;
-
-    if (isNearPlatformLevel && (isTouchingDown || hasSettled) && isAbovePlatform) {
-      // Mark as stacked
-      if (!existing) {
-        this.stackedGifts.push({ sprite: gift, size, stacked: true });
-      } else {
-        existing.stacked = true;
-      }
-      this.currentStack += 1;
-      this.stackText.setText(
-        `Stack: ${this.currentStack}/${this.targetStack} 🎁`
-      );
-      this.revealHint();
-      this.emitSparkles(gift.x, gift.y, 1.0);
-
-      // Make gift more stable once stacked
-      body.setBounce(0, 0);
-      body.setDrag(100, 0);
-
-      if (this.currentStack >= this.targetStack) {
-        this.handleWin();
+    // Find the lowest empty row in this column
+    let targetRow = -1;
+    for (let row = 0; row < GRID_ROWS; row++) {
+      if (!this.grid[bestCol][row].sprite) {
+        targetRow = row;
+        break;
       }
     }
-  }
 
-  private handleGiftFallen(sprite: Phaser.Physics.Arcade.Sprite) {
-    const stackedGift = this.stackedGifts.find(sg => sg.sprite === sprite);
-    if (stackedGift && stackedGift.stacked) {
-      // A stacked gift fell off
-      this.currentStack = Math.max(0, this.currentStack - 1);
-      this.stackText.setText(
-        `Stack: ${this.currentStack}/${this.targetStack} 🎁`
-      );
-      stackedGift.stacked = false;
+    // If column is full, try adjacent columns
+    if (targetRow === -1) {
+      for (let offset = 1; offset < GRID_COLS; offset++) {
+        for (const dir of [-1, 1]) {
+          const col = bestCol + offset * dir;
+          if (col >= 0 && col < GRID_COLS) {
+            for (let row = 0; row < GRID_ROWS; row++) {
+              if (!this.grid[col][row].sprite) {
+                bestCol = col;
+                targetRow = row;
+                break;
+              }
+            }
+            if (targetRow !== -1) break;
+          }
+        }
+        if (targetRow !== -1) break;
+      }
     }
-    sprite.destroy();
+
+    // If all columns are full, gift falls through (miss)
+    if (targetRow === -1) {
+      return;
+    }
+
+    // Calculate local position in container
+    const localX = (bestCol - (GRID_COLS - 1) / 2) * GIFT_SIZE;
+    const localY = -12 - GIFT_SIZE / 2 - targetRow * GIFT_SIZE; // Stack upward from platform
+
+    // Create a static image in the container (no physics)
+    const color = gift.getData('color') as string;
+    const stackedGift = this.add.image(localX, localY, `stack-gift-${color}`);
+    stackedGift.setDisplaySize(GIFT_SIZE, GIFT_SIZE);
+    this.stackContainer.add(stackedGift);
+
+    // Update grid
+    this.grid[bestCol][targetRow].sprite = stackedGift;
+
+    // Remove the physics gift
+    gift.destroy();
+
+    // Update score
+    this.currentStack++;
+    this.stackText.setText(`Stack: ${this.currentStack}/${this.targetStack} 🎁`);
+    this.revealHint();
+    this.emitSparkles(this.containerX + localX, this.stackContainer.y + localY, 0.8);
+
+    // Extend catch zone height as stack grows
+    this.updateCatchZoneHeight();
+
+    if (this.currentStack >= this.targetStack) {
+      this.handleWin();
+    }
+  };
+
+  private updateCatchZoneHeight() {
+    // Find the highest stacked gift
+    let maxRow = 0;
+    for (let col = 0; col < GRID_COLS; col++) {
+      for (let row = 0; row < GRID_ROWS; row++) {
+        if (this.grid[col][row].sprite) {
+          maxRow = Math.max(maxRow, row + 1);
+        }
+      }
+    }
+
+    // Move catch zone up to the top of the stack (thin zone stays thin)
+    // Gifts must land on top of the stack to be caught
+    this.catchZone.y = this.scale.height - 52 - maxRow * GIFT_SIZE;
   }
 
   private getUniqueLetters(): string[] {
@@ -493,7 +420,6 @@ export class GiftStackingGame extends Phaser.Scene {
   }
 
   private revealHint() {
-    // Refill available letters if exhausted
     if (this.availableLetters.length === 0) {
       this.availableLetters = this.getUniqueLetters();
     }
@@ -509,18 +435,13 @@ export class GiftStackingGame extends Phaser.Scene {
 
   private createUI() {
     const padding = 12;
-    this.timerText = this.add.text(
-      padding,
-      padding,
-      `Time: ${this.timeRemaining}`,
-      {
-        fontSize: '20px',
-        fontFamily: 'monospace',
-        color: '#ffffff',
-        backgroundColor: '#00000088',
-        padding: { x: 8, y: 4 },
-      }
-    );
+    this.timerText = this.add.text(padding, padding, `Time: ${this.timeRemaining}`, {
+      fontSize: '20px',
+      fontFamily: 'monospace',
+      color: '#ffffff',
+      backgroundColor: '#00000088',
+      padding: { x: 8, y: 4 },
+    });
     this.timerText.setScrollFactor(0).setDepth(1000);
 
     this.stackText = this.add.text(
@@ -564,13 +485,9 @@ export class GiftStackingGame extends Phaser.Scene {
     if (this.gameOver) return;
     this.gameOver = true;
     this.physics.pause();
-    if (this.timerEvent) {
-      this.timerEvent.remove();
-    }
-    if (this.spawnTimer) {
-      this.spawnTimer.remove();
-    }
-    this.emitSparkles(this.platform.x, this.platform.y - 50, 1.5);
+    if (this.timerEvent) this.timerEvent.remove();
+    if (this.spawnTimer) this.spawnTimer.remove();
+    this.emitSparkles(this.containerX, this.stackContainer.y - 80, 1.5);
     this.showGameOver(true);
   }
 
@@ -578,12 +495,8 @@ export class GiftStackingGame extends Phaser.Scene {
     if (this.gameOver) return;
     this.gameOver = true;
     this.physics.pause();
-    if (this.timerEvent) {
-      this.timerEvent.remove();
-    }
-    if (this.spawnTimer) {
-      this.spawnTimer.remove();
-    }
+    if (this.timerEvent) this.timerEvent.remove();
+    if (this.spawnTimer) this.spawnTimer.remove();
     this.showGameOver(false);
   }
 
@@ -647,18 +560,14 @@ export class GiftStackingGame extends Phaser.Scene {
 
       const restartScene = () => this.scene.restart(this.gameConfigData);
       replayButton.on('pointerdown', restartScene);
-      replayButton.on('pointerover', () =>
-        replayButton.setFillStyle(0xff4757, 1)
-      );
-      replayButton.on('pointerout', () =>
-        replayButton.setFillStyle(0xd7263d, 1)
-      );
+      replayButton.on('pointerover', () => replayButton.setFillStyle(0xff4757, 1));
+      replayButton.on('pointerout', () => replayButton.setFillStyle(0xd7263d, 1));
       this.input.keyboard!.once('keydown-R', restartScene);
     } else {
       const failText = this.add.text(
         this.scale.width / 2,
         this.scale.height / 2 - 40,
-        'STACK FAILED!',
+        'TIME UP!',
         {
           fontSize: '32px',
           fontFamily: 'Courier New, monospace',
@@ -690,9 +599,7 @@ export class GiftStackingGame extends Phaser.Scene {
 
       const restartScene = () => this.scene.restart(this.gameConfigData);
       retryButton.on('pointerdown', restartScene);
-      retryButton.on('pointerover', () =>
-        retryButton.setFillStyle(0xff4757, 1)
-      );
+      retryButton.on('pointerover', () => retryButton.setFillStyle(0xff4757, 1));
       retryButton.on('pointerout', () => retryButton.setFillStyle(0xd7263d, 1));
       this.input.keyboard!.once('keydown-R', restartScene);
     }
@@ -714,9 +621,9 @@ export class GiftStackingGame extends Phaser.Scene {
   }
 
   update() {
-    if (!this.platform || this.gameOver) return;
+    if (this.gameOver) return;
 
-    const speed = 300;
+    const speed = 400;
     let dirX = 0;
 
     // Keyboard controls
@@ -729,85 +636,36 @@ export class GiftStackingGame extends Phaser.Scene {
 
     // Touch/mouse controls
     if (this.pointerX !== null) {
-      const diff = this.pointerX - this.platform.x;
+      const diff = this.pointerX - this.containerX;
       if (Math.abs(diff) > 10) {
         dirX = diff > 0 ? 1 : -1;
       }
     }
 
-    const platformBody = this.platform.body as Phaser.Physics.Arcade.Body;
-    platformBody.setVelocityX(dirX * speed);
+    // Move the container
+    const delta = this.game.loop.delta / 1000;
+    this.containerX += dirX * speed * delta;
 
-    // Move stacked gifts with the platform (Arcade Physics doesn't do this automatically)
-    this.stackedGifts.forEach(stackedGift => {
-      if (stackedGift.stacked && stackedGift.sprite.active) {
-        const giftBody = stackedGift.sprite.body as Phaser.Physics.Arcade.Body;
-        // Apply platform's horizontal velocity to stacked gifts
-        giftBody.setVelocityX(platformBody.velocity.x);
-      }
-    });
+    // Clamp to screen bounds
+    const halfWidth = this.platformWidth / 2;
+    this.containerX = Phaser.Math.Clamp(
+      this.containerX,
+      halfWidth,
+      this.scale.width - halfWidth
+    );
 
-    // Check for gifts that fell off the bottom
-    this.gifts.children.entries.forEach(gift => {
+    // Update container position
+    this.stackContainer.x = this.containerX;
+
+    // Update catch zone position to match
+    this.catchZone.x = this.containerX;
+
+    // Remove gifts that fell off screen
+    this.fallingGifts.children.entries.forEach(gift => {
       const sprite = gift as Phaser.Physics.Arcade.Sprite;
       if (sprite && sprite.active && sprite.y > this.scale.height + 50) {
-        this.handleGiftFallen(sprite);
+        sprite.destroy();
       }
     });
-
-    // Continuously check if non-stacked gifts should be counted as stacked
-    this.gifts.children.entries.forEach(gift => {
-      const sprite = gift as Phaser.Physics.Arcade.Sprite;
-      if (!sprite || !sprite.active) return;
-
-      // Skip if already tracked as stacked
-      const existing = this.stackedGifts.find(sg => sg.sprite === sprite);
-      if (existing && existing.stacked) return;
-
-      const size = sprite.getData('size') as 'small' | 'medium' | 'large';
-      if (size) {
-        this.checkGiftStacked(sprite, size);
-      }
-    });
-
-    // Check if previously stacked gifts have fallen off screen
-    this.stackedGifts.forEach(stackedGift => {
-      if (stackedGift.stacked && stackedGift.sprite.active) {
-        // If gift fell below screen, mark as fallen
-        if (stackedGift.sprite.y > this.scale.height + 50) {
-          this.handleGiftFallen(stackedGift.sprite);
-        }
-      }
-    });
-  }
-
-  private dampenGiftCollision: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback =
-    (obj1, obj2) => {
-      const spriteA = obj1 as Phaser.Physics.Arcade.Sprite;
-      const spriteB = obj2 as Phaser.Physics.Arcade.Sprite;
-      this.settleGift(spriteA);
-      this.settleGift(spriteB);
-    };
-
-  private handleLandingCollision: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback =
-    (_platform, gift) => {
-      const sprite = gift as Phaser.Physics.Arcade.Sprite;
-      this.settleGift(sprite, true);
-    };
-
-  private settleGift(
-    sprite: Phaser.Physics.Arcade.Sprite,
-    clampVertical = false
-  ) {
-    if (!sprite.active) return;
-    const body = sprite.body as Phaser.Physics.Arcade.Body;
-    const vx = body.velocity.x * 0.4;
-    const vy = clampVertical
-      ? Math.min(body.velocity.y, 120)
-      : body.velocity.y * 0.6;
-    body.setVelocity(vx, vy);
-    body.setAngularVelocity((body.angularVelocity ?? 0) * 0.4);
-    body.setDrag(140, 120);
-    body.setAngularDrag(320);
   }
 }
