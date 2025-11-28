@@ -124,10 +124,10 @@ export default function PlayPage() {
         steps: [
           'Tap or click cards to reveal them, and remember their spots to find pairs.',
           'Each successful match sprinkles a new letter hint about your recipient.',
-          'Match all 5 pairs before the timer hits zero to reveal the name!',
+          'Match all 6 pairs before the timer hits zero to reveal the name!',
         ],
         controls: 'Tap / Click cards (touch & mouse friendly).',
-        duration: '60 seconds • Match 5 pairs',
+        duration: '60 seconds • Match 6 pairs',
       };
     }
     if (selectedGame === 'GiftStackingGame') {

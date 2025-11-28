@@ -234,7 +234,7 @@ export class StockingMatchGame extends Phaser.Scene {
   private flippedCards: MemoryCard[] = [];
   private lockBoard = false;
   private matchesFound = 0;
-  private totalPairs = 5;
+  private totalPairs = 6;
   private timerText!: Phaser.GameObjects.Text;
   private matchesText!: Phaser.GameObjects.Text;
   private hintText!: Phaser.GameObjects.Text;
