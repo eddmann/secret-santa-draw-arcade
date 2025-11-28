@@ -186,8 +186,8 @@ export default function EntryPage() {
               type="text"
               className="pixel-input"
               value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="Christmas 2025"
+              onChange={e => setTitle(e.target.value.toUpperCase())}
+              placeholder="CHRISTMAS 2025"
             />
           </div>
 
@@ -196,8 +196,8 @@ export default function EntryPage() {
             <textarea
               className="pixel-textarea"
               value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Optional event description..."
+              onChange={e => setDescription(e.target.value.toUpperCase())}
+              placeholder="OPTIONAL EVENT DESCRIPTION..."
             />
           </div>
         </div>
@@ -213,9 +213,9 @@ export default function EntryPage() {
               type="text"
               className="pixel-input flex-1"
               value={newParticipantName}
-              onChange={e => setNewParticipantName(e.target.value)}
+              onChange={e => setNewParticipantName(e.target.value.toUpperCase())}
               onKeyPress={e => e.key === 'Enter' && addParticipant()}
-              placeholder="Enter name..."
+              placeholder="ENTER NAME..."
             />
             <button
               className="pixel-button pixel-button-christmas"
