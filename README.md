@@ -55,7 +55,7 @@ This is part of my annual tradition of over-engineering Secret Santa:
 - [2022 - Step Function Secret Santa](https://github.com/eddmann/step-function-secret-santa)
 - [2023 - Secret Santa PWA](https://github.com/eddmann/secret-santa-pwa)
 - [2024 - Secret Santa Draw](https://github.com/eddmann/secret-santa-draw)
-- **2025 - Secret Santa Draw Arcade** ⭐
+- **2025** - **Secret Santa Draw Arcade** ⭐ | [Secret Santa Draw GBC](https://github.com/eddmann/secret-santa-draw-gbc)
 
 ## 📄 License
 
